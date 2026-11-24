@@ -6,7 +6,8 @@ import { Plus, Trash2 } from "lucide-react";
 import { AGENTS, AGENT_BY_STEP } from "@/lib/agents";
 import { currentStep, fa, stepDone, stepMeta, type Project } from "@/lib/data";
 import { computeMetrics } from "@/lib/metrics";
-import { useProjects } from "@/lib/store";
+import { errorText } from "@/lib/api";
+import { useProductList } from "@/lib/store";
 import AuthGuard from "@/components/AuthGuard";
 import AppShell from "@/components/AppShell";
 import AgentAvatar from "@/components/agents/AgentAvatar";
@@ -25,7 +26,7 @@ export default function ProjectsPage() {
 }
 
 function List() {
-  const { projects, loaded, removeProject } = useProjects();
+  const { products: projects, loaded, error, reload, remove } = useProductList();
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-8">
@@ -42,7 +43,24 @@ function List() {
         )}
       </div>
 
-      {loaded && projects.length === 0 && (
+      {!loaded && (
+        <div className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="shimmer h-64 rounded-3xl" />
+          ))}
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-5 py-4 text-sm text-rose-100">
+          {error}
+          <button onClick={() => void reload()} className="rounded-lg bg-white/10 px-3 py-1.5 text-xs hover:bg-white/15">
+            تلاش دوباره
+          </button>
+        </div>
+      )}
+
+      {loaded && !error && projects.length === 0 && (
         <div className="mt-12 flex flex-col items-center rounded-[2rem] border border-white/10 bg-gradient-to-b from-violet-500/10 to-transparent px-6 py-16 text-center">
           <AgentOrb size={90} rings />
           <div className="mt-14 flex -space-x-3 space-x-reverse">
@@ -65,15 +83,17 @@ function List() {
 
       <div className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {projects.map((p) => (
-          <Card key={p.id} project={p} onRemove={() => removeProject(p.id)} />
+          <Card key={p.id} project={p} onRemove={() => remove(p.id)} />
         ))}
       </div>
     </div>
   );
 }
 
-function Card({ project, onRemove }: { project: Project; onRemove: () => void }) {
+function Card({ project, onRemove }: { project: Project; onRemove: () => Promise<void> }) {
   const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const step = currentStep(project);
   const agent = AGENT_BY_STEP[step];
   const m = computeMetrics(project);
@@ -130,9 +150,21 @@ function Card({ project, onRemove }: { project: Project; onRemove: () => void })
 
       {confirming && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-[#0b1020]/95 p-6 text-center">
-          <p className="text-sm text-slate-200">«{project.name}» حذف شود؟</p>
+          <p className="text-sm text-slate-200">«{project.name}» برای همیشه حذف شود؟</p>
+          {deleteError && <p className="text-xs text-rose-300">{deleteError}</p>}
           <div className="flex gap-2">
-            <button onClick={onRemove} className="rounded-lg bg-rose-500 px-4 py-2 text-sm font-bold text-white">حذف</button>
+            <button
+              disabled={deleting}
+              onClick={() => {
+                setDeleting(true);
+                onRemove()
+                  .catch((e) => setDeleteError(errorText(e)))
+                  .finally(() => setDeleting(false));
+              }}
+              className="rounded-lg bg-rose-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {deleting ? "در حال حذف…" : "حذف"}
+            </button>
             <button onClick={() => setConfirming(false)} className="rounded-lg bg-white/10 px-4 py-2 text-sm text-slate-200">انصراف</button>
           </div>
         </div>

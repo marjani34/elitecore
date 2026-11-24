@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { api, errorText } from "@/lib/api";
 import { createProject } from "@/lib/data";
-import { useProjects } from "@/lib/store";
 import AuthGuard, { FullLoader } from "@/components/AuthGuard";
 
 export default function NewProjectPage() {
@@ -11,17 +12,32 @@ export default function NewProjectPage() {
 }
 
 function Create() {
-  const { loaded, addProject } = useProjects();
   const router = useRouter();
-  const done = useRef(false);
+  const started = useRef(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!loaded || done.current) return;
-    done.current = true;
+    if (started.current) return;
+    started.current = true;
     const p = createProject();
-    addProject(p);
-    router.replace(`/projects/${p.id}`);
-  }, [loaded, addProject, router]);
+    api
+      .saveProduct(p)
+      .then(() => router.replace(`/projects/${p.id}`))
+      .catch((e) => setError(errorText(e)));
+  }, [router]);
 
+  if (error) {
+    return (
+      <div className="grid min-h-screen place-items-center p-6 text-center">
+        <div>
+          <p className="text-lg font-bold text-white">ساخت محصول ناموفق بود</p>
+          <p className="mt-2 text-sm text-rose-200">{error}</p>
+          <Link href="/projects" className="mt-6 inline-block text-sm text-violet-300 hover:text-violet-200">
+            بازگشت به محصولات
+          </Link>
+        </div>
+      </div>
+    );
+  }
   return <FullLoader />;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import type { AiVerdict, Analysis, Priority, RepoInfo, Session } from "./data";
+import type { AiVerdict, Analysis, Priority, Project, RepoInfo, Session } from "./data";
 
 // In production the API is served from the same domain under /api (see vercel.json services).
 export const API_URL = (
@@ -26,12 +26,12 @@ function token(): string | null {
   }
 }
 
-async function request<T>(path: string, body?: unknown): Promise<T> {
+async function request<T>(path: string, body?: unknown, method?: "GET" | "POST" | "PUT" | "DELETE"): Promise<T> {
   const t = token();
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, {
-      method: body === undefined ? "GET" : "POST",
+      method: method ?? (body === undefined ? "GET" : "POST"),
       headers: { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -77,6 +77,13 @@ type Demo = { demo?: boolean };
 
 export const api = {
   login: (email: string, password: string) => request<Session>("/auth/login", { email, password }),
+
+  /* Products (stored in Postgres / Supabase) */
+  listProducts: () => request<Project[]>("/products"),
+  getProduct: (id: string) => request<Project>(`/products/${id}`),
+  saveProduct: (p: Project) => request<{ id: string; updatedAt: string }>(`/products/${p.id}`, { data: p }, "PUT"),
+  deleteProduct: (id: string) => request<{ id: string }>(`/products/${id}`, undefined, "DELETE"),
+
   health: () => request<{ status: string; aiMode: "demo" | "live" }>("/health"),
 
   analyze: (b: { gitUrl: string; markdown: string; markdownName: string }) =>

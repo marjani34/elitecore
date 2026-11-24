@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, FlaskConical } from "lucide-react";
+import { ArrowRight, Check, CircleAlert, FlaskConical, LoaderCircle } from "lucide-react";
 import { AGENT_BY_KEY, AGENT_BY_STEP, agentStatus } from "@/lib/agents";
 import { api, errorText } from "@/lib/api";
 import {
@@ -29,7 +29,7 @@ import {
   type StepKey,
 } from "@/lib/data";
 import { computeMetrics } from "@/lib/metrics";
-import type { ProjectUpdater } from "@/lib/store";
+import type { ProjectUpdater, SaveState } from "@/lib/store";
 import AgentTeamStrip from "../agents/AgentTeamStrip";
 import ActivityFeed from "../agents/ActivityFeed";
 import { LockedStep, StepFrame, type StepProps } from "../steps/StepFrame";
@@ -168,7 +168,17 @@ const APPROVE_TEXT: Record<ApprovableStep, string> = {
   approval: "بررسی معیارهای پذیرش را تأیید کردم.",
 };
 
-export default function Workspace({ project, update }: { project: Project; update: ProjectUpdater }) {
+export default function Workspace({
+  project,
+  update,
+  saveState = "idle",
+  onRetrySave,
+}: {
+  project: Project;
+  update: ProjectUpdater;
+  saveState?: SaveState;
+  onRetrySave?: () => void;
+}) {
   const [step, setStep] = useState<StepKey>(() => currentStep(project));
   const [running, setRunning] = useState<AgentKey | null>(null);
   const [liveLine, setLiveLine] = useState("");
@@ -252,6 +262,7 @@ export default function Workspace({ project, update }: { project: Project; updat
           </div>
         </div>
         <div className="flex items-center gap-4">
+          <SaveBadge state={saveState} onRetry={onRetrySave} />
           {project.demo && (
             <span className="flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs text-amber-200 ring-1 ring-amber-400/30" title="OPENAI_API_KEY روی سرور تنظیم نشده است">
               <FlaskConical className="size-3.5" />
@@ -302,5 +313,23 @@ export default function Workspace({ project, update }: { project: Project; updat
         </div>
       </div>
     </div>
+  );
+}
+
+function SaveBadge({ state, onRetry }: { state: SaveState; onRetry?: () => void }) {
+  if (state === "idle") return null;
+  if (state === "error") {
+    return (
+      <button onClick={onRetry} className="flex items-center gap-1.5 rounded-full bg-rose-500/10 px-3 py-1 text-xs text-rose-200 ring-1 ring-rose-400/30">
+        <CircleAlert className="size-3.5" />
+        ذخیره نشد · تلاش دوباره
+      </button>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-slate-400">
+      {state === "saving" ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5 text-emerald-400" />}
+      {state === "saving" ? "در حال ذخیره…" : "ذخیره شد"}
+    </span>
   );
 }

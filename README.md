@@ -46,8 +46,21 @@ All routes except `/api/health` and `/api/auth/login` need `Authorization: Beare
 | POST | `/api/agents/review` | Behrad |
 | POST | `/api/agents/report` | Mahsa |
 
-The API is stateless for now (the browser stores products in localStorage and sends context with each call),
-so it runs on serverless as is. When the database is added, products move to the API.
+## Database (Supabase Postgres)
+
+Products are stored in a `products` table (one row per product, full state in a `jsonb` column).
+The table is created automatically on the API's first database call, with Row Level Security turned on
+so Supabase's public Data API can't read it (the API connects as the owner and isn't affected).
+
+Set `DATABASE_URL` to Supabase's **Transaction pooler** string (Connect → port `6543`),
+locally in `apps/api/.env` and on Vercel. Products saved in the browser by earlier versions are uploaded once automatically.
+
+| Method | Route |
+|--------|-------|
+| GET | `/api/products` |
+| GET | `/api/products/:id` |
+| PUT | `/api/products/:id` (`{ data }`) |
+| DELETE | `/api/products/:id` |
 
 ## Deploy to Vercel (one project)
 
@@ -55,7 +68,7 @@ so it runs on serverless as is. When the database is added, products move to the
 `/api/*` goes to the NestJS service (`apps/api`), everything else to the Next.js service (`apps/web`).
 
 1. Import the repo in Vercel as a single project (Root Directory: the repo root).
-2. Add environment variables: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `AUTH_SECRET`, `OPENAI_API_KEY`
+2. Add environment variables: `DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `AUTH_SECRET`, `OPENAI_API_KEY`
    (optional: `OPENAI_MODEL`, `OPENAI_BASE_URL`, `GITHUB_TOKEN`).
    `NEXT_PUBLIC_API_URL` and `WEB_ORIGIN` are not needed: web and API share the domain.
 3. Deploy. Login is refused until `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `AUTH_SECRET` are set.

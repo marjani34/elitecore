@@ -68,6 +68,23 @@ export class DbService implements OnModuleDestroy {
     }
   }
 
+  /** Connection check for /api/health. Error details only outside production. */
+  async ping(): Promise<{ status: 'ok' | 'error' | 'not-configured'; latencyMs?: number; products?: number; error?: string }> {
+    if (!this.config.get<string>('DATABASE_URL')) return { status: 'not-configured' };
+    const started = Date.now();
+    try {
+      await this.ensureSchema();
+      const res = await this.getPool().query<{ n: string }>('select count(*)::text as n from products');
+      return { status: 'ok', latencyMs: Date.now() - started, products: Number(res.rows[0]?.n ?? 0) };
+    } catch (err) {
+      const detail = await this.getPool()
+        .query('select 1')
+        .then(() => (err as Error).message)
+        .catch((e: Error) => e.message);
+      return { status: 'error', ...(process.env.NODE_ENV === 'production' ? {} : { error: detail }) };
+    }
+  }
+
   async onModuleDestroy() {
     await this.pool?.end();
   }

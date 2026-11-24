@@ -49,15 +49,13 @@ All routes except `/api/health` and `/api/auth/login` need `Authorization: Beare
 The API is stateless for now (the browser stores products in localStorage and sends context with each call),
 so it runs on serverless as is. When the database is added, products move to the API.
 
-## Deploy to Vercel
+## Deploy to Vercel (one project)
 
-Create **two Vercel projects** from the same Git repository:
+`vercel.json` uses **Vercel Services**: one project, one domain.
+`/api/*` goes to the NestJS service (`apps/api`), everything else to the Next.js service (`apps/web`).
 
-1. **API** – Root Directory: `apps/api` (Vercel detects NestJS automatically).
-   Environment variables: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `AUTH_SECRET`, `WEB_ORIGIN` (the web URL, e.g. `https://elite-web.vercel.app`),
-   `OPENAI_API_KEY`, optionally `OPENAI_MODEL`, `OPENAI_BASE_URL`, `GITHUB_TOKEN`.
-   In production, login is refused until `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `AUTH_SECRET` are set.
-2. **Web** – Root Directory: `apps/web` (Next.js).
-   Environment variable: `NEXT_PUBLIC_API_URL` = `https://<your-api>.vercel.app/api`.
-
-Deploy the API first, then the web project, then put the web URL in the API's `WEB_ORIGIN` and redeploy the API.
+1. Import the repo in Vercel as a single project (Root Directory: the repo root).
+2. Add environment variables: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `AUTH_SECRET`, `OPENAI_API_KEY`
+   (optional: `OPENAI_MODEL`, `OPENAI_BASE_URL`, `GITHUB_TOKEN`).
+   `NEXT_PUBLIC_API_URL` and `WEB_ORIGIN` are not needed: web and API share the domain.
+3. Deploy. Login is refused until `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `AUTH_SECRET` are set.

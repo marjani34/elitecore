@@ -2,7 +2,10 @@
 
 import type { AiVerdict, Analysis, Priority, RepoInfo, Session } from "./data";
 
-export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api").replace(/\/$/, "");
+// In production the API is served from the same domain under /api (see vercel.json services).
+export const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL ?? (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:3001/api")
+).replace(/\/$/, "");
 export const SESSION_KEY = "elite:session";
 
 export class ApiError extends Error {

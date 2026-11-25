@@ -39,22 +39,22 @@ export class DbService implements OnModuleDestroy {
       idleTimeoutMillis: 10_000,
       connectionTimeoutMillis: 10_000,
     });
-    this.pool.on('error', (err) => this.logger.error(`Postgres pool error: ${err.message}`));
+    this.pool.on('error', (err: Error) => this.logger.error(`Postgres pool error: ${err.message}`));
     return this.pool;
   }
 
   private ensureSchema(): Promise<void> {
-    if (!this.ready) {
-      this.ready = this.getPool()
-        .query(SCHEMA)
-        .then(() => undefined)
-        .catch((err: Error) => {
-          this.ready = undefined;
-          this.logger.error(`Schema setup failed: ${err.message}`);
-          throw new ServiceUnavailableException('اتصال به پایگاه داده برقرار نشد.');
-        });
-    }
-    return this.ready;
+    if (this.ready) return this.ready;
+    const ready: Promise<void> = this.getPool()
+      .query(SCHEMA)
+      .then(() => undefined)
+      .catch((err: Error) => {
+        this.ready = undefined; // allow a retry on the next request
+        this.logger.error(`Schema setup failed: ${err.message}`);
+        throw new ServiceUnavailableException('اتصال به پایگاه داده برقرار نشد.');
+      });
+    this.ready = ready;
+    return ready;
   }
 
   async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {

@@ -28,9 +28,7 @@ npm run dev
 Log in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `apps/api/.env`
 (in development, if they're empty, the defaults are `admin@elite.app` / `admin123`).
 
-The agents work with any OpenAI-compatible API: set `AI_API_KEY`, `AI_BASE_URL` and `AI_MODEL`
-(e.g. `https://dargahee.ai/api/v1` + `rastai/glm`, or OpenAI + `gpt-4o-mini`).
-Without a key the agents run in **demo mode**: Kaveh still reads the real GitHub repo,
+Without `OPENAI_API_KEY` the agents run in **demo mode**: Kaveh still reads the real GitHub repo,
 and the other agents produce template output, so the whole flow can be tried.
 
 ## API
@@ -70,7 +68,7 @@ locally in `apps/api/.env` and on Vercel. Products saved in the browser by earli
 `/api/*` goes to the NestJS service (`apps/api`), everything else to the Next.js service (`apps/web`).
 
 1. Import the repo in Vercel as a single project (Root Directory: the repo root).
-2. Add environment variables: `DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `AUTH_SECRET`, `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`
-   (optional: `GITHUB_TOKEN`).
+2. Add environment variables: `DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `AUTH_SECRET`, `OPENAI_API_KEY`
+   (optional: `OPENAI_MODEL`, `OPENAI_BASE_URL`, `GITHUB_TOKEN`).
    `NEXT_PUBLIC_API_URL` and `WEB_ORIGIN` are not needed: web and API share the domain.
 3. Deploy. Login is refused until `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `AUTH_SECRET` are set.

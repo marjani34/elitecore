@@ -153,3 +153,47 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i:
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return out;
 }
+
+const words = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .split(/[^a-z0-9؀-ۿ‌]+/i)
+    .map((w) => w.replace(/‌/g, ''))
+    .filter((w) => w.length > 2);
+
+/**
+ * Picks the modules that implement a feature: first the paths the Feature Analyst linked,
+ * then (if none matched) the modules whose path, title and UI labels share the most words with the feature.
+ */
+export function findModules(mods: DocModule[], paths: string[], text: string, max = 3): DocModule[] {
+  const norm = (p: string) => p.trim().toLowerCase().replace(/^\.?\//, '');
+  const wanted = paths.map(norm).filter(Boolean);
+  const byPath = mods.filter((m) => {
+    const p = norm(m.path);
+    const files = m.files.map(norm);
+    return wanted.some(
+      (w) =>
+        p === w ||
+        p.endsWith(w) ||
+        w.endsWith(p) ||
+        (w.length > 6 && p.includes(w)) ||
+        files.some((f) => f === w || f.endsWith(`/${w}`) || w.endsWith(`/${f}`)),
+    );
+  });
+  if (byPath.length) return byPath.slice(0, max);
+
+  const target = new Set(words(text));
+  if (!target.size) return [];
+  return mods
+    .filter((m) => m.path !== '(intro)')
+    .map((m) => {
+      const hay = words([m.path, m.title, ...m.labels, ...m.components].join(' '));
+      const score = hay.reduce((n, w) => n + (target.has(w) ? 1 : 0), 0);
+      return { m, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, Math.min(max, 2))
+    .map((x) => x.m);
+}

@@ -42,7 +42,13 @@ import ReportStep from "../steps/ReportStep";
 
 type TaskResult = { apply: (p: Project) => Project; summary: string; demo?: boolean };
 
-const featurePayload = (f: Feature) => ({ id: f.id, title: f.title, description: f.description, priority: f.priority });
+const featurePayload = (f: Feature) => ({
+  id: f.id,
+  title: f.title,
+  description: f.description,
+  priority: f.priority,
+  modules: f.modules ?? [],
+});
 
 /** What each agent does when it runs. Every task gets a snapshot of the project and returns a patch. */
 const TASKS: Record<AgentKey, (p: Project) => Promise<TaskResult>> = {
@@ -67,7 +73,15 @@ const TASKS: Record<AgentKey, (p: Project) => Promise<TaskResult>> = {
 
   feature: async (p) => {
     const r = await api.features({ analysis: p.analysis, context: p.source.context ?? "" });
-    const items: Feature[] = r.features.map((f) => ({ id: newId(), ...f, checked: false, origin: "ai" }));
+    const items: Feature[] = r.features.map((f) => ({
+      id: newId(),
+      title: f.title,
+      description: f.description,
+      priority: f.priority,
+      modules: f.modules ?? [],
+      checked: false,
+      origin: "ai",
+    }));
     return {
       demo: r.demo,
       summary: `${fa(items.length)} ویژگی در محصول پیدا کردم (${fa(items.filter((f) => f.priority === "required").length)} ضروری). هر کدام را که درست است تیک بزن.`,
@@ -85,7 +99,7 @@ const TASKS: Record<AgentKey, (p: Project) => Promise<TaskResult>> = {
 
   journey: async (p) => {
     const features = confirmedFeatures(p);
-    const r = await api.journeys({ analysis: p.analysis, features: features.map(featurePayload) });
+    const r = await api.journeys({ analysis: p.analysis, context: p.source.context ?? "", features: features.map(featurePayload) });
     const ids = new Set(features.map((f) => f.id));
     const items: Journey[] = r.journeys
       .filter((j) => ids.has(j.featureId))
@@ -103,6 +117,7 @@ const TASKS: Record<AgentKey, (p: Project) => Promise<TaskResult>> = {
     const journeys = p.journeys.filter((j) => j.checked && ids.has(j.featureId));
     const r = await api.criteria({
       analysis: p.analysis,
+      context: p.source.context ?? "",
       features: features.map(featurePayload),
       journeys: journeys.map((j) => ({ featureId: j.featureId, title: j.title, steps: j.steps })),
     });
@@ -117,12 +132,18 @@ const TASKS: Record<AgentKey, (p: Project) => Promise<TaskResult>> = {
   },
 
   qa: async (p) => {
-    const features = new Map(confirmedFeatures(p).map((f) => [f.id, f.title]));
+    const features = new Map(confirmedFeatures(p).map((f) => [f.id, f]));
     const criteria = activeCriteria(p);
     const r = await api.review({
       analysis: p.analysis,
       context: p.source.context ?? "",
-      criteria: criteria.map((c) => ({ id: c.id, text: c.text, feature: features.get(c.featureId) ?? "" })),
+      markdown: p.source.markdown ?? "",
+      criteria: criteria.map((c) => ({
+        id: c.id,
+        text: c.text,
+        feature: features.get(c.featureId)?.title ?? "",
+        modules: features.get(c.featureId)?.modules ?? [],
+      })),
     });
     const byId = new Map(r.reviews.map((v) => [v.id, v]));
     const pass = r.reviews.filter((v) => v.verdict === "likely-pass").length;

@@ -3,6 +3,12 @@ import { LlmService } from '../llm/llm.service';
 import { clip, list, priority, str, strList } from '../common/clean';
 import { PROMPTS } from './agents.prompts';
 import { mockCriteria, mockFeatures, mockJourneys, mockReport, mockReview, type FeatureIn } from './agents.mock';
+import { findModules, mapLimit, splitModules, stripAgentBoilerplate } from '../sources/markdown-digest';
+
+/** How much module-summary context the journeys/criteria agents get, and source code per review batch. */
+const STEP_CONTEXT = 60_000;
+const REVIEW_CODE = 40_000;
+const SMALL_MARKDOWN = 50_000;
 
 type Body = Record<string, unknown>;
 
@@ -11,7 +17,13 @@ type Verdict = (typeof VERDICTS)[number];
 
 function featuresIn(v: unknown): FeatureIn[] {
   const items = list(v, 60)
-    .map((f) => ({ id: str(f.id, 80), title: str(f.title, 200), description: str(f.description, 600), priority: priority(f.priority) }))
+    .map((f) => ({
+      id: str(f.id, 80),
+      title: str(f.title, 200),
+      description: str(f.description, 600),
+      priority: priority(f.priority),
+      modules: strList(f.modules, 5, 200),
+    }))
     .filter((f) => f.id && f.title);
   if (!items.length) throw new BadRequestException('هیچ ویژگی تأییدشده‌ای ارسال نشده است.');
   return items;
@@ -32,7 +44,12 @@ export class AgentsService {
     const r = await this.llm.json<Body>(PROMPTS.features, { analysis: b.analysis, context });
     return {
       features: list(r.features, 30)
-        .map((f) => ({ title: str(f.title, 200), description: str(f.description, 600), priority: priority(f.priority) }))
+        .map((f) => ({
+          title: str(f.title, 200),
+          description: str(f.description, 600),
+          priority: priority(f.priority),
+          modules: strList(f.modules, 5, 200),
+        }))
         .filter((f) => f.title),
     };
   }
@@ -42,7 +59,7 @@ export class AgentsService {
     const features = featuresIn(b.features);
     if (this.llm.isDemo) return { demo: true, journeys: mockJourneys(features) };
     const ids = new Set(features.map((f) => f.id));
-    const r = await this.llm.json<Body>(PROMPTS.journeys, { analysis: b.analysis, features });
+    const r = await this.llm.json<Body>(PROMPTS.journeys, { analysis: b.analysis, features, context: clip(b.context, STEP_CONTEXT) });
     return {
       journeys: list(r.journeys, 120)
         .map((j) => ({ featureId: str(j.featureId, 80), title: str(j.title, 200), steps: strList(j.steps, 10, 300) }))
@@ -56,7 +73,12 @@ export class AgentsService {
     if (this.llm.isDemo) return { demo: true, criteria: mockCriteria(features) };
     const ids = new Set(features.map((f) => f.id));
     const journeys = list(b.journeys, 200).map((j) => ({ featureId: str(j.featureId, 80), title: str(j.title, 200), steps: strList(j.steps, 10, 300) }));
-    const r = await this.llm.json<Body>(PROMPTS.criteria, { analysis: b.analysis, features, journeys });
+    const r = await this.llm.json<Body>(PROMPTS.criteria, {
+      analysis: b.analysis,
+      features,
+      journeys,
+      context: clip(b.context, STEP_CONTEXT),
+    });
     return {
       criteria: list(r.criteria, 200)
         .map((c) => ({ featureId: str(c.featureId, 80), text: str(c.text, 800), priority: priority(c.priority) }))
@@ -64,17 +86,59 @@ export class AgentsService {
     };
   }
 
-  /** Step 5 – Behrad pre-reviews each acceptance criterion against the code; the admin makes the final call. */
+  /**
+   * Step 5 – Behrad pre-reviews each acceptance criterion against the code; the admin makes the final call.
+   * For a large markdown snapshot he gets, per feature, the real code of the modules that implement it.
+   */
   async review(b: Body) {
     const criteria = list(b.criteria, 200)
-      .map((c) => ({ id: str(c.id, 80), text: str(c.text, 800), feature: str(c.feature, 200) }))
+      .map((c) => ({
+        id: str(c.id, 80),
+        text: str(c.text, 800),
+        feature: str(c.feature, 200),
+        modules: strList(c.modules, 5, 200),
+      }))
       .filter((c) => c.id && c.text);
     if (!criteria.length) throw new BadRequestException('هیچ معیاری برای بررسی ارسال نشده است.');
     if (this.llm.isDemo) return { demo: true, reviews: mockReview(criteria) };
+
     const ids = new Set(criteria.map((c) => c.id));
-    const r = await this.llm.json<Body>(PROMPTS.review, { analysis: b.analysis, context: clip(b.context, 70_000), criteria });
+    const markdown = typeof b.markdown === 'string' ? b.markdown.slice(0, 3_000_000) : '';
+    const context = clip(b.context, 70_000);
+
+    let raw: Body[];
+    if (markdown.length > SMALL_MARKDOWN) {
+      // Review feature by feature, each with the source code of its own modules.
+      const mods = splitModules(stripAgentBoilerplate(markdown));
+      const groups = new Map<string, typeof criteria>();
+      for (const c of criteria) groups.set(c.feature, [...(groups.get(c.feature) ?? []), c]);
+      const results = await mapLimit([...groups.entries()], 4, async ([feature, items]) => {
+        const picked = findModules(mods, items.flatMap((c) => c.modules), feature);
+        const code = picked
+          .map((m) => `===== MODULE: ${m.path} =====\n${m.compact}`)
+          .join('\n\n')
+          .slice(0, REVIEW_CODE);
+        const input = {
+          analysis: b.analysis,
+          feature,
+          sourceCode: code || '(no matching module found in the document)',
+          criteria: items.map(({ id, text }) => ({ id, text })),
+        };
+        return this.llm.json<Body>(PROMPTS.review, input).catch(() => ({ reviews: [] }) as Body);
+      });
+      raw = results.flatMap((r) => list(r.reviews, 200));
+    } else {
+      const r = await this.llm.json<Body>(PROMPTS.review, {
+        analysis: b.analysis,
+        sourceCode: markdown || context,
+        context: markdown ? context : undefined,
+        criteria: criteria.map(({ id, text, feature }) => ({ id, text, feature })),
+      });
+      raw = list(r.reviews, 200);
+    }
+
     return {
-      reviews: list(r.reviews, 200)
+      reviews: raw
         .map((x) => ({
           id: str(x.id, 80),
           verdict: (VERDICTS.includes(x.verdict as Verdict) ? x.verdict : 'unknown') as Verdict,

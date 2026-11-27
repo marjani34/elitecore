@@ -10,6 +10,7 @@ export interface FeatureIn {
   title: string;
   description?: string;
   priority?: Priority;
+  modules?: string[];
 }
 
 const GENERIC_HEADINGS =
@@ -124,19 +125,19 @@ const FALLBACK_FEATURES: [string, string][] = [
 
 export function mockFeatures(context: string) {
   const tree = treeOf(context);
-  const found: { title: string; description: string }[] = [];
+  const found: { title: string; description: string; modules: string[] }[] = [];
   const seen = new Set<string>();
-  const push = (title: string, description: string) => {
+  const push = (title: string, description: string, modules: string[] = []) => {
     const k = title.toLowerCase();
     if (seen.has(k) || found.length >= 15) return;
     seen.add(k);
-    found.push({ title, description });
+    found.push({ title, description, modules });
   };
 
   const docModules = digestModulesOf(context);
   for (const m of docModules) {
     if (/(^|\/)(pages?|screens?|views?|routes?)\//i.test(m.path)) {
-      push(m.title || `بخش ${m.name}`, `بر اساس ماژول ${m.path} شناسایی شد.`);
+      push(m.title || `بخش ${m.name}`, `بر اساس ماژول ${m.path} شناسایی شد.`, [m.path]);
     }
   }
   if (!docModules.length) headingsOf(context).forEach((h) => push(h, 'بر اساس مستندات محصول شناسایی شد.'));

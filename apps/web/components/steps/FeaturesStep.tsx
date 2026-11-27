@@ -101,6 +101,15 @@ export default function FeaturesStep({ project, update, status, running, busy, l
             <div className="min-w-0 flex-1">
               <p className={`font-semibold ${f.checked ? "text-white" : "text-slate-400"}`}>{f.title}</p>
               {f.description && <p className="mt-0.5 text-sm leading-6 text-slate-400">{f.description}</p>}
+              {!!f.modules?.length && (
+                <div className="mt-1.5 flex flex-wrap gap-1" title="ماژول‌هایی که این ویژگی را پیاده می‌کنند">
+                  {f.modules.map((m) => (
+                    <span key={m} dir="ltr" className="rounded-md bg-white/[0.05] px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
+                      {m.split("/").slice(-2).join("/")}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
               <OriginBadge origin={f.origin} agentName={agent.name} />

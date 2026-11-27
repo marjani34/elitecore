@@ -57,6 +57,7 @@ export interface AiFeature {
   title: string;
   description: string;
   priority: Priority;
+  modules?: string[];
 }
 export interface AiJourney {
   featureId: string;
@@ -74,6 +75,7 @@ export interface AiReview {
   reason: string;
 }
 type Demo = { demo?: boolean };
+export type FeaturePayload = { id: string; title: string; description: string; priority: Priority; modules: string[] };
 
 export const api = {
   login: (email: string, password: string) => request<Session>("/auth/login", { email, password }),
@@ -94,16 +96,22 @@ export const api = {
   features: (b: { analysis?: Analysis; context: string }) =>
     request<{ features: AiFeature[] } & Demo>("/agents/features", b),
 
-  journeys: (b: { analysis?: Analysis; features: { id: string; title: string; description: string; priority: Priority }[] }) =>
+  journeys: (b: { analysis?: Analysis; context: string; features: FeaturePayload[] }) =>
     request<{ journeys: AiJourney[] } & Demo>("/agents/journeys", b),
 
   criteria: (b: {
     analysis?: Analysis;
-    features: { id: string; title: string; description: string; priority: Priority }[];
+    context: string;
+    features: FeaturePayload[];
     journeys: { featureId: string; title: string; steps: string[] }[];
   }) => request<{ criteria: AiCriterion[] } & Demo>("/agents/criteria", b),
 
-  review: (b: { analysis?: Analysis; context: string; criteria: { id: string; text: string; feature: string }[] }) =>
+  review: (b: {
+    analysis?: Analysis;
+    context: string;
+    markdown: string;
+    criteria: { id: string; text: string; feature: string; modules: string[] }[];
+  }) =>
     request<{ reviews: AiReview[] } & Demo>("/agents/review", b),
 
   report: (b: { metrics: unknown; features: unknown; criteria: unknown }) =>

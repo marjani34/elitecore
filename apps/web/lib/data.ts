@@ -35,6 +35,8 @@ export interface Feature {
   priority: Priority;
   checked: boolean;
   origin: Origin;
+  /** Module / file paths in the source that implement this feature (evidence for the next agents). */
+  modules?: string[];
 }
 
 export interface Journey {

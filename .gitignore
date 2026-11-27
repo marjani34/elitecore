@@ -8,3 +8,6 @@ coverage/
 .env*.local
 *.tsbuildinfo
 .DS_Store
+
+# Next.js regenerates this on every dev/build run
+next-env.d.ts

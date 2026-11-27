@@ -26,7 +26,7 @@ const MAX_MARKDOWN = 3_000_000;
 /** Below this, the cleaned markdown is passed to the agents as is. */
 const SMALL_MARKDOWN = 50_000;
 /** Size of each part Kaveh summarises separately. */
-const CHUNK_CHARS = 28_000;
+const CHUNK_CHARS = 20_000;
 const MAX_CHUNKS = 40;
 
 export interface ModuleSummary {

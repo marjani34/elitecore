@@ -48,27 +48,83 @@ export class LlmService {
       { role: 'user', content: typeof input === 'string' ? input : JSON.stringify(input) },
     ];
 
-    let res = await this.post({ model: this.model, response_format: { type: 'json_object' }, messages });
+    // Streaming keeps the connection busy while the model writes; long silent requests get dropped by some gateways.
+    let res = await this.postWithRetry({ model: this.model, stream: true, response_format: { type: 'json_object' }, messages });
     // Some gateways/models reject JSON mode: retry once without it (the prompts already demand JSON).
     if (res.status === 400 || res.status === 422) {
       const text = await res.text();
       if (/response_format|json/i.test(text)) {
         this.logger.warn('JSON mode not supported by this model; retrying without response_format');
-        res = await this.post({ model: this.model, messages });
+        res = await this.postWithRetry({ model: this.model, stream: true, messages });
       } else {
         return this.fail(res.status, text);
       }
     }
     if (!res.ok) return this.fail(res.status, await res.text());
 
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const content = data.choices?.[0]?.message?.content ?? '';
+    const content = await this.readContent(res);
     const parsed = extractJson(content);
     if (parsed === undefined) {
       this.logger.error(`AI returned non-JSON: ${content.slice(0, 300)}`);
       throw new BadGatewayException('پاسخ سرویس هوش مصنوعی قابل خواندن نبود.');
     }
     return parsed as T;
+  }
+
+  /** Reads either a streamed (text/event-stream) or a normal JSON completion. */
+  private async readContent(res: Response): Promise<string> {
+    const type = res.headers.get('content-type') ?? '';
+    if (!type.includes('text/event-stream') || !res.body) {
+      const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+      return data.choices?.[0]?.message?.content ?? '';
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let content = '';
+    const handle = (line: string) => {
+      const l = line.trim();
+      if (!l.startsWith('data:')) return;
+      const data = l.slice(5).trim();
+      if (!data || data === '[DONE]') return;
+      try {
+        const j = JSON.parse(data) as { choices?: { delta?: { content?: string }; message?: { content?: string } }[] };
+        content += j.choices?.[0]?.delta?.content ?? j.choices?.[0]?.message?.content ?? '';
+      } catch {
+        // ignore keep-alive or malformed lines
+      }
+    };
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        lines.forEach(handle);
+      }
+      buffer += decoder.decode();
+      buffer.split('\n').forEach(handle);
+    } catch (err) {
+      const reason = netReason(err);
+      this.logger.error(`AI stream from ${new URL(this.baseUrl).host} broke after ${content.length} chars: ${reason}`);
+      throw new BadGatewayException(`ارتباط با سرویس هوش مصنوعی وسط پاسخ قطع شد: ${reason}`);
+    }
+    return content;
+  }
+
+  /** One retry when the connection itself fails (not for HTTP errors). */
+  private async postWithRetry(body: Record<string, unknown>): Promise<Response> {
+    try {
+      return await this.post(body);
+    } catch (err) {
+      this.logger.warn('AI connection failed; retrying once');
+      await new Promise((r) => setTimeout(r, 1500));
+      return this.post(body).catch(() => {
+        throw err;
+      });
+    }
   }
 
   private async post(body: Record<string, unknown>): Promise<Response> {

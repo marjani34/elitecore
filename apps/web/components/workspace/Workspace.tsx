@@ -19,6 +19,7 @@ import {
   stepMeta,
   stepUnlocked,
   hasOutput,
+  statusFromVerdict,
   type AgentKey,
   type ApprovableStep,
   type Criterion,
@@ -148,14 +149,26 @@ const TASKS: Record<AgentKey, (p: Project) => Promise<TaskResult>> = {
     const byId = new Map(r.reviews.map((v) => [v.id, v]));
     const pass = r.reviews.filter((v) => v.verdict === "likely-pass").length;
     const fail = r.reviews.filter((v) => v.verdict === "likely-fail").length;
+    const unsure = r.reviews.length - pass - fail;
     return {
       demo: r.demo,
-      summary: `${fa(r.reviews.length)} معیار را با کد مقایسه کردم: ${fa(pass)} احتمالاً برقرار، ${fa(fail)} احتمالاً ناقص. تصمیم نهایی با توست.`,
+      summary:
+        `${fa(r.reviews.length)} معیار را با کد مقایسه کردم: ${fa(pass)} را «پذیرفته» و ${fa(fail)} را «رد» علامت زدم` +
+        (unsure ? ` و ${fa(unsure)} مورد را برای بررسی دستی خودت گذاشتم` : "") +
+        ". هر کدام را که قبول نداری تغییر بده؛ تصمیم نهایی با توست.",
       apply: (x) => ({
         ...x,
         criteria: x.criteria.map((c) => {
           const v = byId.get(c.id);
-          return v ? { ...c, aiVerdict: v.verdict, aiReason: v.reason } : c;
+          if (!v) return c;
+          // Pre-select Behrad's suggestion, but never overwrite a decision the admin made.
+          const keepAdmin = c.status !== "pending" && c.decidedBy !== "ai";
+          return {
+            ...c,
+            aiVerdict: v.verdict,
+            aiReason: v.reason,
+            ...(keepAdmin ? {} : { status: statusFromVerdict(v.verdict), decidedBy: "ai" as const }),
+          };
         }),
       }),
     };

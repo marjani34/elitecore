@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Ban, Check, CircleHelp, RefreshCw, Sparkles, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { AGENT_BY_STEP } from "@/lib/agents";
-import { activeCriteria, confirmedFeatures, fa, type AcStatus, type AiVerdict, type Criterion } from "@/lib/data";
+import { activeCriteria, confirmedFeatures, fa, statusFromVerdict, type AcStatus, type AiVerdict, type Criterion } from "@/lib/data";
 import { tally } from "@/lib/metrics";
 import { btn, PriorityChip } from "../ui";
 import { AgentWorking, ApprovedBar, ApproveFooter, StepFrame, type StepProps } from "./StepFrame";
@@ -36,16 +36,28 @@ export default function ApprovalStep({ project, update, status, running, busy, l
   const criteria = activeCriteria(project);
   const t = tally(criteria);
   const reviewed = criteria.some((c) => c.aiVerdict);
-  const suggestedPass = criteria.filter((c) => c.status === "pending" && c.aiVerdict === "likely-pass").length;
+  const suggestedPending = criteria.filter((c) => c.status === "pending" && c.aiVerdict && c.aiVerdict !== "unknown").length;
+  const byBehrad = criteria.filter((c) => c.decidedBy === "ai" && c.status !== "pending").length;
+  const needsYou = criteria.filter((c) => c.status === "pending").length;
   const [filter, setFilter] = useState<Filter>("all");
 
   const setStatus = (id: string, s: AcStatus) =>
-    update((p) => ({ ...p, criteria: p.criteria.map((c) => (c.id === id ? { ...c, status: c.status === s ? "pending" : s } : c)) }));
+    update((p) => ({
+      ...p,
+      criteria: p.criteria.map((c) =>
+        c.id === id ? { ...c, status: c.status === s ? "pending" : s, decidedBy: "admin" } : c,
+      ),
+    }));
 
+  /** For criteria reviewed before pre-selection existed: apply Behrad's suggestions to undecided ones. */
   const acceptSuggestions = () =>
     update((p) => ({
       ...p,
-      criteria: p.criteria.map((c) => (c.status === "pending" && c.aiVerdict === "likely-pass" ? { ...c, status: "passed" } : c)),
+      criteria: p.criteria.map((c) =>
+        c.status === "pending" && c.aiVerdict && c.aiVerdict !== "unknown"
+          ? { ...c, status: statusFromVerdict(c.aiVerdict), decidedBy: "ai" }
+          : c,
+      ),
     }));
 
   if (running) {
@@ -80,15 +92,18 @@ export default function ApprovalStep({ project, update, status, running, busy, l
         <Count label="در انتظار" value={t.pending} total={t.total} color="#fbbf24" />
       </div>
 
-      {!approved && reviewed && suggestedPass > 0 && (
+      {!approved && reviewed && (byBehrad > 0 || needsYou > 0) && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.06] px-4 py-3">
-          <p className="flex items-center gap-2 text-sm text-emerald-100">
-            <Sparkles className="size-4" />
-            {agent.name} فکر می‌کند {fa(suggestedPass)} معیار برقرار است.
+          <p className="flex items-center gap-2 text-sm leading-7 text-emerald-100">
+            <Sparkles className="size-4 shrink-0" />
+            {byBehrad > 0 && <>{agent.name} {fa(byBehrad)} معیار را از پیش علامت زده است؛ هر کدام را قبول نداری تغییر بده. </>}
+            {needsYou > 0 && <>{fa(needsYou)} معیار منتظر تصمیم توست.</>}
           </p>
-          <button onClick={acceptSuggestions} className="rounded-lg bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/30">
-            پذیرش پیشنهادهای {agent.name}
-          </button>
+          {suggestedPending > 0 && (
+            <button onClick={acceptSuggestions} className="rounded-lg bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/30">
+              اعمال پیشنهادهای {agent.name}
+            </button>
+          )}
         </div>
       )}
 
@@ -133,6 +148,9 @@ export default function ApprovalStep({ project, update, status, running, busy, l
                         <p className="text-[13px] leading-7 text-slate-200">{c.text}</p>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <PriorityChip value={c.priority} />
+                          {c.decidedBy === "ai" && c.status !== "pending" && (
+                            <span className="rounded-md bg-white/[0.06] px-2 py-0.5 text-[11px] text-slate-300">انتخاب {agent.name}</span>
+                          )}
                           {c.aiVerdict && (
                             <span className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] ${VERDICT[c.aiVerdict].cls}`}>
                               {VERDICT[c.aiVerdict].icon}

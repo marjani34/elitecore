@@ -57,6 +57,8 @@ export interface Criterion {
   status: AcStatus;
   aiVerdict?: AiVerdict;
   aiReason?: string;
+  /** Who set the current status: Behrad's suggestion (pre-selected) or the admin. */
+  decidedBy?: "ai" | "admin";
 }
 
 export interface Report {
@@ -194,3 +196,7 @@ export function reopenFrom(p: Project, k: ApprovableStep): Project {
 export function addActivity(p: Project, actor: Activity["actor"], text: string, kind: Activity["kind"]): Project {
   return { ...p, activity: [...p.activity, { id: newId(), actor, text, kind, at: Date.now() }].slice(-200) };
 }
+
+/** Status Behrad's verdict pre-selects; "unknown" leaves it for the admin. */
+export const statusFromVerdict = (v?: AiVerdict): AcStatus =>
+  v === "likely-pass" ? "passed" : v === "likely-fail" ? "failed" : "pending";

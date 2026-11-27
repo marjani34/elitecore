@@ -12,7 +12,8 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="fa" dir="rtl">
-      <body className="min-h-screen font-sans antialiased">{children}</body>
+      {/* suppressHydrationWarning: browser extensions (e.g. ColorZilla) add attributes to <body> */}
+      <body className="min-h-screen font-sans antialiased" suppressHydrationWarning>{children}</body>
     </html>
   );
 }

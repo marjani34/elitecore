@@ -33,14 +33,22 @@ export function stripAgentBoilerplate(md: string): string {
     .replace(/^#\s*Project Code Snapshot \(for AI agents\)\s*$/gim, '');
 }
 
+/** Note added to every prompt that receives compacted code, so the agents don't report the compaction as bugs. */
+export const COMPACTION_NOTE =
+  'NOTE: Elite compacted this code before you read it: SVG icon markup was replaced by "[icon markup omitted]", ' +
+  'className/style values and very long string literals were removed or shortened to "…", comments and blank lines were removed, ' +
+  'and side-effect imports (e.g. CSS files) were dropped. Do NOT report any of these as missing, empty or buggy.';
+
 export function compactCode(text: string): string {
   return text
     .replace(/^\s*`{3,}[^\n]*$/gm, '')
-    .replace(/^\s*import\s[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, '')
     .replace(/^\s*import\s+['"][^\n]*$/gm, '')
+    .replace(/^\s*import\s([\s\S]*?)from\s+(['"][^'"]+['"]);?\s*$/gm, (_m, what: string, from: string) =>
+      `import ${what.replace(/\s+/g, ' ').trim()} from ${from}`,
+    )
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/[^\n]*$/gm, '')
-    .replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>')
+    .replace(/<svg[\s\S]*?<\/svg>/g, '<svg>[icon markup omitted]</svg>')
     .replace(/\b(d|viewBox|points|fill|stroke)="[^"]*"/g, '')
     .replace(/\b(className|class|style)=("[^"]*"|\{`[^`\n]*`\}|\{\{[^}]*\}\})/g, '')
     .replace(/"[^"\n]{160,}"/g, '"…"')

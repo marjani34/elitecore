@@ -3,7 +3,7 @@ import { LlmService } from '../llm/llm.service';
 import { clip, list, priority, str, strList } from '../common/clean';
 import { PROMPTS } from './agents.prompts';
 import { mockCriteria, mockFeatures, mockJourneys, mockReport, mockReview, type FeatureIn } from './agents.mock';
-import { findModules, mapLimit, splitModules, stripAgentBoilerplate } from '../sources/markdown-digest';
+import { COMPACTION_NOTE, findModules, mapLimit, splitModules, stripAgentBoilerplate } from '../sources/markdown-digest';
 
 /** How much module-summary context the journeys/criteria agents get, and source code per review batch. */
 const STEP_CONTEXT = 60_000;
@@ -121,6 +121,7 @@ export class AgentsService {
         const input = {
           analysis: b.analysis,
           feature,
+          note: COMPACTION_NOTE,
           sourceCode: code || '(no matching module found in the document)',
           criteria: items.map(({ id, text }) => ({ id, text })),
         };

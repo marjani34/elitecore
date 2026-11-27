@@ -4,7 +4,7 @@ import { PROMPTS } from '../agents/agents.prompts';
 import { mockAnalysis } from '../agents/agents.mock';
 import { list, str, strList } from '../common/clean';
 import { GithubService, type RepoInfo } from './github.service';
-import { chunkModules, mapLimit, splitModules, stripAgentBoilerplate, structuralDigest, type DocModule } from './markdown-digest';
+import { chunkModules, COMPACTION_NOTE, mapLimit, splitModules, stripAgentBoilerplate, structuralDigest, type DocModule } from './markdown-digest';
 
 export interface AnalyzeBody {
   gitUrl?: string;
@@ -98,7 +98,7 @@ export class SourcesService {
     const chunks = chunkModules(mods.filter((m) => m.compact.length > 40), CHUNK_CHARS).slice(0, MAX_CHUNKS);
     const started = Date.now();
     const results = await mapLimit(chunks, CHUNK_CONCURRENCY, (chunk, i) =>
-      this.llm.json<Record<string, unknown>>(PROMPTS.chunk, chunk).catch((err: Error) => {
+      this.llm.json<Record<string, unknown>>(PROMPTS.chunk, `${COMPACTION_NOTE}\n${chunk}`).catch((err: Error) => {
         this.logger.warn(`Chunk ${i + 1}/${chunks.length} failed: ${err.message}`);
         return null;
       }),

@@ -20,7 +20,8 @@ Analyse the product and return:
   "summary": string,              // 2-4 sentences: what the product is, who it is for, what it does
   "techStack": string[],          // technologies / frameworks detected (English names)
   "modules": string[],            // main parts/areas of the product, Persian, max 12 (group small components together)
-  "highlights": string[]          // 3-6 notable observations about the codebase or docs (quality, completeness, gaps), Persian
+  "highlights": string[]          // 3-6 notable observations about the codebase or docs (quality, completeness, gaps), Persian.
+                                  // Only state bugs/security issues that appear in the summaries or code you were given, and name the module/file.
 }`,
 
   chunk: `${COMMON}
@@ -40,7 +41,8 @@ For EVERY module in this part return:
     }
   ]
 }
-Be concrete and specific to the code (mention screens, buttons, forms, table columns, flows).`,
+Be concrete and specific to the code (mention screens, buttons, forms, table columns, flows).
+Only report an issue if you can see it in the code of THIS module; name the file it is in. Never guess.`,
 
   features: `${COMMON}
 Your name is Niloufar (نیلوفر), the Feature Analyst. Using the product analysis and the source context, list the features the product ALREADY HAS.

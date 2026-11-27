@@ -1,6 +1,6 @@
 "use client";
 
-import type { AiVerdict, Analysis, Priority, Project, RepoInfo, Session } from "./data";
+import type { AiVerdict, Analysis, DocModule, Priority, Project, RepoInfo, Session } from "./data";
 
 // In production the API is served from the same domain under /api (see vercel.json services).
 export const API_URL = (
@@ -75,6 +75,18 @@ export interface AiReview {
   reason: string;
 }
 type Demo = { demo?: boolean };
+export interface ModuleSummary {
+  path: string;
+  kind: string;
+  audience: string;
+  purpose: string;
+  capabilities: string[];
+  apis: string[];
+  issues: string[];
+}
+export type PreparedDoc =
+  | { name: string; chars: number; small: true; text: string }
+  | { name: string; chars: number; small: false; digest: string; chunks: string[]; modules: DocModule[] };
 export type FeaturePayload = { id: string; title: string; description: string; priority: Priority; modules: string[] };
 
 export const api = {
@@ -93,6 +105,16 @@ export const api = {
       { repo?: RepoInfo; analysis: Analysis; context: string; document?: { name: string; chars: number; modules: number; summarized: number } } & Demo
     >("/sources/analyze", b),
 
+  /* Step 1 in short requests: prepare → summarize (per part) → finalize */
+  prepare: (b: { gitUrl: string; markdown: string; markdownName: string }) =>
+    request<{ repo?: RepoInfo; repoContext: string; doc: PreparedDoc | null } & Demo>("/sources/prepare", b),
+  summarize: (chunk: string) => request<{ modules: ModuleSummary[] }>("/sources/summarize", { chunk }),
+  finalize: (b: {
+    repo?: RepoInfo;
+    repoContext: string;
+    doc: { name: string; small: true; text: string } | { name: string; small: false; digest: string; summaries: ModuleSummary[] } | null;
+  }) => request<{ analysis: Analysis; context: string } & Demo>("/sources/finalize", b),
+
   features: (b: { analysis?: Analysis; context: string }) =>
     request<{ features: AiFeature[] } & Demo>("/agents/features", b),
 
@@ -109,7 +131,9 @@ export const api = {
   review: (b: {
     analysis?: Analysis;
     context: string;
-    markdown: string;
+    markdown?: string;
+    feature?: string;
+    sourceCode?: string;
     criteria: { id: string; text: string; feature: string; modules: string[] }[];
   }) =>
     request<{ reviews: AiReview[] } & Demo>("/agents/review", b),

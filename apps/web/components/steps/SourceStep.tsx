@@ -20,7 +20,9 @@ export default function SourceStep({
 }: Omit<StepProps, "onRun"> & { onAnalyze: (src: Pick<Source, "gitUrl" | "markdown" | "markdownName">) => void }) {
   const [gitUrl, setGitUrl] = useState(project.source.gitUrl);
   const [markdown, setMarkdown] = useState(project.source.markdown);
-  const [markdownName, setMarkdownName] = useState(project.source.markdownName);
+  // A large file's raw text isn't kept after analysis; ask for it again when re-analysing.
+  const fileDropped = !project.source.markdown && !!project.source.markdownName;
+  const [markdownName, setMarkdownName] = useState(fileDropped ? "" : project.source.markdownName);
   const [mode, setMode] = useState<"file" | "paste">(project.source.markdown && !project.source.markdownName ? "paste" : "file");
   const [editing, setEditing] = useState(!project.analysis);
 
@@ -57,6 +59,11 @@ export default function SourceStep({
         <p className="mb-6 text-sm leading-7 text-slate-300">
           سلام! من کاوه‌ام. لینک مخزن گیت محصول و/یا فایل markdown مستندات را بده تا کد و محصول را تحلیل کنم.
         </p>
+        {fileDropped && (
+          <p className="-mt-3 mb-6 rounded-xl bg-amber-500/10 px-4 py-3 text-sm leading-7 text-amber-100">
+            فایل بزرگ قبلی (<span dir="ltr">{project.source.markdownName}</span>) برای سبک ماندن ذخیره‌ها نگه داشته نشده است؛ برای تحلیل دوباره آن را دوباره انتخاب کن.
+          </p>
+        )}
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
@@ -100,7 +107,7 @@ export default function SourceStep({
                 <div className="mt-4 flex items-center justify-between rounded-xl bg-cyan-500/10 px-4 py-3 text-sm">
                   <span dir="ltr" className="truncate text-cyan-100">{markdownName}</span>
                   <span className="flex items-center gap-3">
-                    <span className="text-xs text-slate-400">{fa(Math.ceil(markdown.length / 1024))} KB</span>
+                    <span className="text-xs text-slate-400">{fa(Math.ceil((markdown.length || project.source.markdownChars || 0) / 1024))} KB</span>
                     <button
                       onClick={() => {
                         setMarkdown("");
@@ -171,7 +178,11 @@ export default function SourceStep({
               تغییر منبع
             </button>
             <button
-              onClick={() => onAnalyze({ gitUrl: project.source.gitUrl, markdown: project.source.markdown, markdownName: project.source.markdownName })}
+              onClick={() =>
+                fileDropped
+                  ? setEditing(true)
+                  : onAnalyze({ gitUrl: project.source.gitUrl, markdown: project.source.markdown, markdownName: project.source.markdownName })
+              }
               disabled={busy}
               className={btn.ghost}
             >

@@ -76,10 +76,24 @@ export interface Activity {
   kind: "info" | "done" | "error" | "admin";
 }
 
+/** One module of a large markdown document, compacted (kept so Behrad can review against the code). */
+export interface DocModule {
+  path: string;
+  title: string;
+  files: string[];
+  endpoints: string[];
+  labels: string[];
+  components: string[];
+  compact: string;
+}
+
 export interface Source {
   gitUrl: string;
+  /** Raw markdown; large documents are dropped after analysis (their modules are kept instead). */
   markdown: string;
   markdownName: string;
+  markdownChars?: number;
+  modules?: DocModule[];
   context?: string;
   repo?: RepoInfo;
   analyzedAt?: number;

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, CircleAlert, FlaskConical, LoaderCircle } from "lucide-react";
 import { AGENT_BY_KEY, AGENT_BY_STEP, agentStatus } from "@/lib/agents";
-import { api, errorText } from "@/lib/api";
+import { api, errorText, type ModuleSummary } from "@/lib/api";
+import { findModules, moduleCode, runParallel } from "@/lib/evidence";
 import {
   activeCriteria,
   addActivity,
@@ -43,6 +44,11 @@ import ApprovalStep from "../steps/ApprovalStep";
 import ReportStep from "../steps/ReportStep";
 
 type TaskResult = { apply: (p: Project) => Project; summary: string; demo?: boolean };
+/** Lets a long task report what it is doing (replaces the rotating "working" lines). */
+type Progress = (text: string) => void;
+
+/** Large documents: raw markdown above this is not kept after analysis (its compacted modules are). */
+const KEEP_MARKDOWN_CHARS = 60_000;
 
 const featurePayload = (f: Feature) => ({
   id: f.id,
@@ -53,22 +59,61 @@ const featurePayload = (f: Feature) => ({
 });
 
 /** What each agent does when it runs. Every task gets a snapshot of the project and returns a patch. */
-const TASKS: Record<AgentKey, (p: Project) => Promise<TaskResult>> = {
-  scout: async (p) => {
-    const r = await api.analyze({ gitUrl: p.source.gitUrl, markdown: p.source.markdown, markdownName: p.source.markdownName });
+const TASKS: Record<AgentKey, (p: Project, progress: Progress) => Promise<TaskResult>> = {
+  scout: async (p, progress) => {
+    progress("در حال خواندن منبع و تقسیم آن به بخش‌ها…");
+    const prep = await api.prepare({ gitUrl: p.source.gitUrl, markdown: p.source.markdown, markdownName: p.source.markdownName });
+    const doc = prep.doc;
+
+    // Large document: summarise every part in its own short request, a few at a time.
+    let summaries: ModuleSummary[] = [];
+    let failedParts = 0;
+    if (doc && !doc.small && !prep.demo) {
+      const total = doc.chunks.length;
+      progress(`در حال خلاصه‌نویسی بخش‌ها: ۰ از ${fa(total)}`);
+      const results = await runParallel(doc.chunks, 4, (chunk) => api.summarize(chunk), (n) =>
+        progress(`در حال خلاصه‌نویسی بخش‌ها: ${fa(n)} از ${fa(total)}`),
+      );
+      failedParts = results.filter((r) => !r).length;
+      if (failedParts === total) throw new Error("هیچ بخشی از سند خلاصه نشد. دوباره تلاش کن.");
+      summaries = results.flatMap((r) => r?.modules ?? []);
+    }
+
+    progress("در حال نوشتن تحلیل نهایی…");
+    const r = await api.finalize({
+      repo: prep.repo,
+      repoContext: prep.repoContext,
+      doc: !doc
+        ? null
+        : doc.small
+          ? { name: doc.name, small: true, text: doc.text }
+          : { name: doc.name, small: false, digest: doc.digest, summaries },
+    });
+
+    const big = doc && !doc.small ? doc : null;
     return {
       demo: r.demo,
       summary:
-        `تحلیل تمام شد: «${r.analysis.productName}»${r.repo?.fileCount ? ` با ${fa(r.repo.fileCount)} فایل` : ""}، ${fa(r.analysis.techStack.length)} فناوری و ${fa(r.analysis.modules.length)} بخش اصلی.` +
-        (r.document && r.document.modules > 1
-          ? ` سند ${fa(Math.round(r.document.chars / 1024))} کیلوبایتی را کامل خواندم: ${fa(r.document.modules)} ماژول${r.document.summarized ? ` و برای ${fa(r.document.summarized)} ماژول خلاصه نوشتم` : ""}.`
+        `تحلیل تمام شد: «${r.analysis.productName}»${prep.repo?.fileCount ? ` با ${fa(prep.repo.fileCount)} فایل` : ""}، ${fa(r.analysis.techStack.length)} فناوری و ${fa(r.analysis.modules.length)} بخش اصلی.` +
+        (big
+          ? ` سند ${fa(Math.round(big.chars / 1024))} کیلوبایتی را کامل خواندم: ${fa(big.modules.length)} ماژول${summaries.length ? ` و برای ${fa(summaries.length)} ماژول خلاصه نوشتم` : ""}.`
           : "") +
+        (failedParts ? ` (${fa(failedParts)} بخش خلاصه نشد؛ اگر لازم شد دوباره تحلیل کن.)` : "") +
         " خلاصه را ببین و تأیید کن.",
       apply: (x) => ({
         ...x,
         name: r.analysis.productName || x.name,
         analysis: r.analysis,
-        source: { ...x.source, context: r.context, repo: r.repo, analyzedAt: Date.now() },
+        source: {
+          ...x.source,
+          context: r.context,
+          repo: prep.repo,
+          analyzedAt: Date.now(),
+          modules: big ? big.modules : undefined,
+          markdownChars: doc?.chars ?? x.source.markdownChars,
+          // Keep large raw markdown out of every save; its compacted modules are kept above.
+          markdown: x.source.markdown.length > KEEP_MARKDOWN_CHARS ? "" : x.source.markdown,
+        },
       }),
     };
   },
@@ -133,29 +178,52 @@ const TASKS: Record<AgentKey, (p: Project) => Promise<TaskResult>> = {
     };
   },
 
-  qa: async (p) => {
-    const features = new Map(confirmedFeatures(p).map((f) => [f.id, f]));
+  qa: async (p, progress) => {
+    const features = confirmedFeatures(p);
+    const byFeature = new Map(features.map((f) => [f.id, f]));
     const criteria = activeCriteria(p);
-    const r = await api.review({
-      analysis: p.analysis,
-      context: p.source.context ?? "",
-      markdown: p.source.markdown ?? "",
-      criteria: criteria.map((c) => ({
-        id: c.id,
-        text: c.text,
-        feature: features.get(c.featureId)?.title ?? "",
-        modules: features.get(c.featureId)?.modules ?? [],
-      })),
-    });
-    const byId = new Map(r.reviews.map((v) => [v.id, v]));
-    const pass = r.reviews.filter((v) => v.verdict === "likely-pass").length;
-    const fail = r.reviews.filter((v) => v.verdict === "likely-fail").length;
-    const unsure = r.reviews.length - pass - fail;
+    const modules = p.source.modules ?? [];
+
+    // One short request per feature, each with only that feature's code.
+    const groups = features
+      .map((f) => ({ feature: f, items: criteria.filter((c) => c.featureId === f.id) }))
+      .filter((g) => g.items.length);
+    progress(`در حال بررسی معیارهای ${fa(groups.length)} ویژگی…`);
+    const results = await runParallel(
+      groups,
+      4,
+      async ({ feature, items }) => {
+        const picked = modules.length ? findModules(modules, feature.modules ?? [], feature.title) : [];
+        return api.review({
+          analysis: p.analysis,
+          context: picked.length ? "" : (p.source.context ?? ""),
+          markdown: picked.length ? undefined : p.source.markdown || undefined,
+          feature: feature.title,
+          sourceCode: picked.length ? moduleCode(picked) : undefined,
+          criteria: items.map((c) => ({
+            id: c.id,
+            text: c.text,
+            feature: byFeature.get(c.featureId)?.title ?? "",
+            modules: byFeature.get(c.featureId)?.modules ?? [],
+          })),
+        });
+      },
+      (n) => progress(`در حال بررسی معیارها: ${fa(n)} از ${fa(groups.length)} ویژگی`),
+    );
+    const reviews = results.flatMap((r) => r?.reviews ?? []);
+    const failed = results.filter((r) => !r).length;
+    if (!reviews.length && failed) throw new Error("بررسی معیارها انجام نشد. دوباره تلاش کن.");
+
+    const byId = new Map(reviews.map((v) => [v.id, v]));
+    const pass = reviews.filter((v) => v.verdict === "likely-pass").length;
+    const fail = reviews.filter((v) => v.verdict === "likely-fail").length;
+    const unsure = reviews.length - pass - fail;
     return {
-      demo: r.demo,
+      demo: results.some((r) => r?.demo),
       summary:
-        `${fa(r.reviews.length)} معیار را با کد مقایسه کردم: ${fa(pass)} را «پذیرفته» و ${fa(fail)} را «رد» علامت زدم` +
+        `${fa(reviews.length)} معیار را با کد مقایسه کردم: ${fa(pass)} را «پذیرفته» و ${fa(fail)} را «رد» علامت زدم` +
         (unsure ? ` و ${fa(unsure)} مورد را برای بررسی دستی خودت گذاشتم` : "") +
+        (failed ? ` (بررسی ${fa(failed)} ویژگی انجام نشد؛ می‌توانی دوباره بررسی کنی.)` : "") +
         ". هر کدام را که قبول نداری تغییر بده؛ تصمیم نهایی با توست.",
       apply: (x) => ({
         ...x,
@@ -259,7 +327,12 @@ export default function Workspace({
     update((x) => addActivity(x, key, agent.startLine, "info"));
 
     try {
-      const r = await TASKS[key](snapshot);
+      const progress: Progress = (text) => {
+        if (timer.current) clearInterval(timer.current);
+        timer.current = null;
+        setLiveLine(text);
+      };
+      const r = await TASKS[key](snapshot, progress);
       update((x) => addActivity({ ...r.apply(x), demo: r.demo ?? x.demo }, key, r.summary, "done"));
     } catch (e) {
       update((x) => addActivity(x, key, `نتوانستم کار را تمام کنم: ${errorText(e)}`, "error"));

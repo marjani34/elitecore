@@ -106,8 +106,20 @@ export class AgentsService {
     const markdown = typeof b.markdown === 'string' ? b.markdown.slice(0, 3_000_000) : '';
     const context = clip(b.context, 70_000);
 
+    // The client may send one feature group with that feature's code already selected (short request).
+    const sourceCode = clip(b.sourceCode, REVIEW_CODE + 5_000);
+
     let raw: Body[];
-    if (markdown.length > SMALL_MARKDOWN) {
+    if (sourceCode) {
+      const r = await this.llm.json<Body>(PROMPTS.review, {
+        analysis: b.analysis,
+        feature: str(b.feature, 200),
+        note: COMPACTION_NOTE,
+        sourceCode,
+        criteria: criteria.map(({ id, text }) => ({ id, text })),
+      });
+      raw = list(r.reviews, 200);
+    } else if (markdown.length > SMALL_MARKDOWN) {
       // Review feature by feature, each with the source code of its own modules.
       const mods = splitModules(stripAgentBoilerplate(markdown));
       const groups = new Map<string, typeof criteria>();

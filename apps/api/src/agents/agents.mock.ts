@@ -27,21 +27,39 @@ function treeOf(context: string): string[] {
     .filter(Boolean);
 }
 
+/** Modules from a large-document digest: "### MODULE: path | title". */
+function digestModulesOf(context: string): { path: string; title: string; name: string }[] {
+  return [...context.matchAll(/^### MODULE: ([^|\n]+?)(?: \| ([^\n]+))?$/gm)]
+    .map((m) => {
+      const path = m[1].trim();
+      const name = path.split('/').pop()?.replace(/\.(md|markdown|txt)$/i, '') ?? path;
+      const t = (m[2] ?? '').trim();
+      // Only keep labels that read like a page title; otherwise fall back to the module name.
+      const title = /^(مدیریت|داشبورد|پنل|صفحه|لیست|فهرست|تاریخچه|تنظیمات|پروفایل|گزارش|سفارش|پرداخت|اشتراک|دستیار)/.test(t) ? t : '';
+      return { path, title, name: name.replace(/([a-z])([A-Z])/g, '$1 $2') };
+    })
+    .filter((m) => m.path !== '(intro)');
+}
+
 function headingsOf(context: string): string[] {
   return context
     .split('\n')
     .map((l) => l.match(/^#{2,3}\s+(.+?)\s*#*$/)?.[1]?.replace(/[`*_[\]]/g, '').trim())
-    .filter((h): h is string => !!h && h.length > 2 && h.length < 60 && !GENERIC_HEADINGS.test(h));
+    .filter(
+      (h): h is string =>
+        !!h && h.length > 2 && h.length < 60 && !GENERIC_HEADINGS.test(h) && !/^MODULE:|\.[a-z]{1,5}$/i.test(h),
+    );
 }
 
 const TECH: [RegExp, string][] = [
   [/"next"\s*:/, 'Next.js'],
-  [/"react"\s*:/, 'React'],
+  [/"react"\s*:|from\s+['"]react['"]/, 'React'],
+  [/react-router/, 'React Router'],
   [/"vue"\s*:/, 'Vue'],
   [/"@angular\/core"/, 'Angular'],
   [/"@nestjs\/core"/, 'NestJS'],
   [/"express"\s*:/, 'Express'],
-  [/"tailwindcss"/, 'Tailwind CSS'],
+  [/"tailwindcss"|tailwindcss/i, 'Tailwind CSS'],
   [/"prisma"|schema\.prisma/, 'Prisma'],
   [/"typeorm"/, 'TypeORM'],
   [/"mongoose"/, 'MongoDB'],
@@ -60,9 +78,10 @@ export function mockAnalysis(repo: RepoInfo | undefined, markdown: string, conte
   const firstParagraph = markdown
     .split(/\n\s*\n/)
     .map((p) => p.trim())
-    .find((p) => p && !p.startsWith('#'));
+    .find((p) => p && !/^(#|-|\*|\[|`|\||>)/.test(p) && p.length > 40);
+  const docModules = digestModulesOf(context);
 
-  const techStack = Array.from(new Set([...(repo?.languages ?? []), ...TECH.filter(([re]) => re.test(context)).map(([, n]) => n)]));
+  const techStack = Array.from(new Set([...(repo?.languages ?? []), ...TECH.filter(([re]) => re.test(context) || re.test(markdown)).map(([, n]) => n)]));
   const tops = Array.from(
     new Set(
       tree
@@ -79,8 +98,13 @@ export function mockAnalysis(repo: RepoInfo | undefined, markdown: string, conte
       firstParagraph?.slice(0, 400) ||
       `محصول «${productName}» بر اساس سورس‌کد و مستندات ارسال‌شده بررسی شد.`,
     techStack: techStack.length ? techStack : ['نامشخص'],
-    modules: tops.length ? tops : headingsOf(context).slice(0, 6),
+    modules: docModules.length
+      ? docModules.slice(0, 12).map((m) => (m.title ? `${m.title} (${m.name})` : m.name))
+      : tops.length
+        ? tops
+        : headingsOf(context).slice(0, 6),
     highlights: [
+      ...(docModules.length ? [`سند شامل ${docModules.length} ماژول است که همه فهرست و خلاصه‌برداری ساختاری شدند.`] : []),
       repo?.provider === 'github' ? `مخزن شامل ${repo.fileCount} فایل است.` : 'سورس‌کد به‌صورت خودکار خوانده نشد؛ تحلیل بر پایه مستندات است.',
       repo?.keyFiles.length ? `فایل‌های کلیدی بررسی‌شده: ${repo.keyFiles.slice(0, 4).join('، ')}` : 'فایل کلیدی برای بررسی پیدا نشد.',
       markdown ? 'مستندات markdown ضمیمه و بررسی شد.' : 'مستندات markdown ضمیمه نشده است.',
@@ -104,12 +128,18 @@ export function mockFeatures(context: string) {
   const seen = new Set<string>();
   const push = (title: string, description: string) => {
     const k = title.toLowerCase();
-    if (seen.has(k) || found.length >= 12) return;
+    if (seen.has(k) || found.length >= 15) return;
     seen.add(k);
     found.push({ title, description });
   };
 
-  headingsOf(context).forEach((h) => push(h, 'بر اساس مستندات محصول شناسایی شد.'));
+  const docModules = digestModulesOf(context);
+  for (const m of docModules) {
+    if (/(^|\/)(pages?|screens?|views?|routes?)\//i.test(m.path)) {
+      push(m.title || `بخش ${m.name}`, `بر اساس ماژول ${m.path} شناسایی شد.`);
+    }
+  }
+  if (!docModules.length) headingsOf(context).forEach((h) => push(h, 'بر اساس مستندات محصول شناسایی شد.'));
   for (const p of tree) {
     const route = p.match(/(?:^|\/)(?:app|pages)\/([^/(\[_][^/]*)\/(?:.*\/)?(?:page|index)\.(?:t|j)sx?$/);
     if (route) push(`بخش ${route[1]}`, `بر اساس مسیر ${p} شناسایی شد.`);

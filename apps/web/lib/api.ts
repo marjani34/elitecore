@@ -87,7 +87,9 @@ export const api = {
   health: () => request<{ status: string; aiMode: "demo" | "live" }>("/health"),
 
   analyze: (b: { gitUrl: string; markdown: string; markdownName: string }) =>
-    request<{ repo?: RepoInfo; analysis: Analysis; context: string } & Demo>("/sources/analyze", b),
+    request<
+      { repo?: RepoInfo; analysis: Analysis; context: string; document?: { name: string; chars: number; modules: number; summarized: number } } & Demo
+    >("/sources/analyze", b),
 
   features: (b: { analysis?: Analysis; context: string }) =>
     request<{ features: AiFeature[] } & Demo>("/agents/features", b),

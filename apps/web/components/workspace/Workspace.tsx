@@ -50,7 +50,12 @@ const TASKS: Record<AgentKey, (p: Project) => Promise<TaskResult>> = {
     const r = await api.analyze({ gitUrl: p.source.gitUrl, markdown: p.source.markdown, markdownName: p.source.markdownName });
     return {
       demo: r.demo,
-      summary: `تحلیل تمام شد: «${r.analysis.productName}»${r.repo?.fileCount ? ` با ${fa(r.repo.fileCount)} فایل` : ""}، ${fa(r.analysis.techStack.length)} فناوری و ${fa(r.analysis.modules.length)} ماژول. خلاصه را ببین و تأیید کن.`,
+      summary:
+        `تحلیل تمام شد: «${r.analysis.productName}»${r.repo?.fileCount ? ` با ${fa(r.repo.fileCount)} فایل` : ""}، ${fa(r.analysis.techStack.length)} فناوری و ${fa(r.analysis.modules.length)} بخش اصلی.` +
+        (r.document && r.document.modules > 1
+          ? ` سند ${fa(Math.round(r.document.chars / 1024))} کیلوبایتی را کامل خواندم: ${fa(r.document.modules)} ماژول${r.document.summarized ? ` و برای ${fa(r.document.summarized)} ماژول خلاصه نوشتم` : ""}.`
+          : "") +
+        " خلاصه را ببین و تأیید کن.",
       apply: (x) => ({
         ...x,
         name: r.analysis.productName || x.name,

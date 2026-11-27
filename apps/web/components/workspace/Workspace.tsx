@@ -32,6 +32,7 @@ import {
 import { computeMetrics } from "@/lib/metrics";
 import type { ProjectUpdater, SaveState } from "@/lib/store";
 import AgentTeamStrip from "../agents/AgentTeamStrip";
+import CompactTeamBar from "../agents/CompactTeamBar";
 import ActivityFeed from "../agents/ActivityFeed";
 import { LockedStep, StepFrame, type StepProps } from "../steps/StepFrame";
 import SourceStep from "../steps/SourceStep";
@@ -223,6 +224,24 @@ export default function Workspace({
   const [liveLine, setLiveLine] = useState("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Show the slim pinned team bar once the full team strip has scrolled out of view.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const stepTopRef = useRef<HTMLDivElement>(null);
+  const [pinned, setPinned] = useState(false);
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([entry]) => setPinned(!entry.isIntersecting), { rootMargin: "-64px 0px 0px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  const selectFromBar = (s: StepKey) => {
+    setStep(s);
+    const top = stepTopRef.current?.getBoundingClientRect().top;
+    if (top !== undefined) window.scrollTo({ top: window.scrollY + top - 96, behavior: "smooth" });
+  };
+
   useEffect(() => () => {
     if (timer.current) clearInterval(timer.current);
   }, []);
@@ -322,7 +341,18 @@ export default function Workspace({
         </div>
       </div>
 
-      <AgentTeamStrip project={project} running={running} liveLine={liveLine} selected={step} onSelect={setStep} />
+      <div ref={stripRef}>
+        <AgentTeamStrip project={project} running={running} liveLine={liveLine} selected={step} onSelect={setStep} />
+      </div>
+      <CompactTeamBar
+        project={project}
+        running={running}
+        liveLine={liveLine}
+        selected={step}
+        visible={pinned}
+        onSelect={selectFromBar}
+      />
+      <div ref={stepTopRef} />
 
       <div className="mt-2 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
@@ -345,7 +375,7 @@ export default function Workspace({
           )}
         </div>
 
-        <div className="xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)]">
+        <div className="xl:sticky xl:top-20 xl:h-[calc(100vh-6rem)]">
           <div className="h-[460px] xl:h-full">
             <ActivityFeed activity={project.activity} running={running} liveLine={liveLine} />
           </div>

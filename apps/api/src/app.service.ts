@@ -13,6 +13,7 @@ export class AppService {
     return {
       status: 'ok',
       aiMode: this.llm.isDemo ? 'demo' : 'live',
+      ai: this.llm.isDemo ? undefined : await this.llm.ping(),
       database: await this.db.ping(),
     };
   }

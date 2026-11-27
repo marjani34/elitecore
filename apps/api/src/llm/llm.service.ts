@@ -80,8 +80,21 @@ export class LlmService {
         signal: AbortSignal.timeout(120_000),
       });
     } catch (err) {
-      this.logger.error(`AI request failed: ${String(err)}`);
-      throw new BadGatewayException('ارتباط با سرویس هوش مصنوعی برقرار نشد.');
+      const reason = netReason(err);
+      this.logger.error(`AI request to ${new URL(this.baseUrl).host} failed: ${reason}`);
+      throw new BadGatewayException(`سرور به سرویس هوش مصنوعی (${new URL(this.baseUrl).host}) دسترسی ندارد: ${reason}`);
+    }
+  }
+
+  /** Connectivity check for /api/health: can this server reach the AI provider at all? (no key, no cost) */
+  async ping(): Promise<{ host: string; reachable: boolean; status?: number; ms: number; error?: string }> {
+    const host = new URL(this.baseUrl).host;
+    const started = Date.now();
+    try {
+      const res = await fetch(`${this.baseUrl}/models`, { signal: AbortSignal.timeout(10_000) });
+      return { host, reachable: true, status: res.status, ms: Date.now() - started };
+    } catch (err) {
+      return { host, reachable: false, ms: Date.now() - started, error: netReason(err) };
     }
   }
 
@@ -91,6 +104,15 @@ export class LlmService {
     if (status === 402 || status === 429) throw new BadGatewayException('اعتبار یا سهمیه سرویس هوش مصنوعی تمام شده است.');
     throw new BadGatewayException(`سرویس هوش مصنوعی خطا داد (${status}).`);
   }
+}
+
+/** Turns Node's opaque "fetch failed" into the real network reason (DNS, refused, timeout, TLS…). */
+function netReason(err: unknown): string {
+  const e = err as { name?: string; message?: string; cause?: { code?: string; message?: string } };
+  if (e?.name === 'TimeoutError' || e?.name === 'AbortError') return 'timeout';
+  const code = e?.cause?.code;
+  const msg = e?.cause?.message ?? e?.message ?? String(err);
+  return code ? `${code} (${msg})` : msg;
 }
 
 /** Parses a JSON object even when the model wraps it in ```json fences or adds text around it. */
